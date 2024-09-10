@@ -25,8 +25,22 @@ fi
 # set Magisk varibles
 RECOVERYMODE=false
 
+# mirror func without init_boot
+find_kern_boot_image() {
+  BOOTIMAGE=
+  if [ ! -z $SLOT ]; then
+    BOOTIMAGE=$(find_block "ramdisk$SLOT" "recovery_ramdisk$SLOT" "boot$SLOT")
+  else
+    BOOTIMAGE=$(find_block ramdisk recovery_ramdisk kern-a android_boot kernel bootimg boot lnx boot_a)
+  fi
+  if [ -z $BOOTIMAGE ]; then
+    # Lets see what fstabs tells me
+    BOOTIMAGE=$(grep -v '#' /etc/*fstab* | grep -E '/boot(img)?[^a-zA-Z]' | grep -oE '/dev/[a-zA-Z0-9_./-]*' | head -n 1)
+  fi
+}
+
 # find boot partition
-find_boot_image
+find_kern_boot_image
 [ -z $BOOTIMAGE ] && abort "! Unable to detect boot partition"
 ui_print "- Target image: $BOOTIMAGE"
 
@@ -42,7 +56,7 @@ fi
 
 # unpack boot image
 ui_print "- Unpacking boot image with magiskboot"
-chmod +x magiskboot
+chmod +x /data/adb/magisk/magiskboot
 /data/adb/magisk/magiskboot unpack boot.img
 [ $? -ne 0 ] && abort "! Failed to unpack boot image"
 sleep 1
@@ -66,6 +80,17 @@ if [ $API -ge 30 ]; then
     # patching offload.o and appending bind commands to post-fs-data.sh
     ui_print "- Patching offload.o..."
     cp post-fs-data.sh.template post-fs-data.sh
+    offloadpath=/system/etc/bpf/
+    mkdir -p $MODPATH$offloadpath
+    find $offloadpath -maxdepth 1 -type f -iname "offload*.o" | while read offloadfile; do
+        ui_print "- Found BPF module: $offloadfile"
+        cp $offloadfile $MODPATH$offloadpath
+        ANDROID_DATA=$PWD dalvikvm -cp bpf_patcher.zip bpf_patcher $MODPATH$offloadfile $API
+        [ $? -ne 0 ] && abort "! BPF patcher failed"
+        echo "mount -o ro,bind \$MODDIR$offloadfile.patched $offloadfile" >> post-fs-data.sh
+        touch flag
+        sleep 1
+    done
     find /apex/com.android.tethering*/etc/bpf/ -maxdepth 0 -type d | while read offloadpath; do
         mkdir -p $MODPATH$offloadpath
         find $offloadpath -maxdepth 1 -type f -iname "offload*.o" | while read offloadfile; do
