@@ -25,8 +25,22 @@ fi
 # set Magisk varibles
 RECOVERYMODE=false
 
+# mirror func without init_boot
+find_kern_boot_image() {
+  BOOTIMAGE=
+  if [ ! -z $SLOT ]; then
+    BOOTIMAGE=$(find_block "ramdisk$SLOT" "recovery_ramdisk$SLOT" "boot$SLOT")
+  else
+    BOOTIMAGE=$(find_block ramdisk recovery_ramdisk kern-a android_boot kernel bootimg boot lnx boot_a)
+  fi
+  if [ -z $BOOTIMAGE ]; then
+    # Lets see what fstabs tells me
+    BOOTIMAGE=$(grep -v '#' /etc/*fstab* | grep -E '/boot(img)?[^a-zA-Z]' | grep -oE '/dev/[a-zA-Z0-9_./-]*' | head -n 1)
+  fi
+}
+
 # find boot partition
-find_boot_image
+find_kern_boot_image
 [ -z $BOOTIMAGE ] && abort "! Unable to detect boot partition"
 ui_print "- Target image: $BOOTIMAGE"
 
