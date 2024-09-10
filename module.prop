@@ -1,0 +1,6 @@
+id=hoppatch
+name=Tethering TTL/HL Patcher
+version=1
+versionCode=1
+author=user
+description=Patches the TTL/HL for forwarded traffic to 64 in the kernel and offload.o, adds 'dun' to APN Type, and disables 'Tethering hardware acceleration'.
