@@ -82,7 +82,7 @@ if [ $API -ge 30 ]; then
 fi
 
 # disabling 'Tethering hardware acceleration'
-if [ $(settings get global tether_offload_disabled) == "0" ]; then
+if [ ! $(settings get global tether_offload_disabled) == "1" ]; then
     ui_print "- Disabling 'Tethering hardware acceleration'..."
     settings put global tether_offload_disabled 1
 else
