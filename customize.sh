@@ -10,15 +10,8 @@ ui_print "- Codename: $(getprop ro.build.product)"
 ui_print "- Device: $(getprop ro.build.display.id)"
 ui_print "- Fingerprint: $(getprop ro.build.fingerprint)"
 
-# KernelSU already has magiskboot in PATH
-if [ ! -z "$MAGISKBIN" ]; then
-  # Add Magisk binaries folder to PATH
-  PATH="$MAGISKBIN:$PATH"
-elif [ "$APATCH" == "true" ]; then
-  # Add symlink to magiskboot to APatch binaries folder
-  apk=$(pm path me.bmax.apatch)
-  ln -sf "${apk:8:${#apk}-16}lib/arm64/libmagiskboot.so" /data/adb/ap/bin/magiskboot
-fi
+# Add Magisk binaries to PATH, KernelSU/APatch already include it
+[ ! -z "$MAGISKBIN" ] && PATH="$MAGISKBIN:$PATH"
 
 ############################################
 # Magisk General Utility Functions
@@ -70,15 +63,14 @@ find_kern_boot_image
 [ -z $BOOTIMAGE ] && abort "! Unable to detect boot partition"
 ui_print "- Target image: $BOOTIMAGE"
 
-# create and change to working directory outside of module folder
-mkdir /data/adb/hoppatch
-cd /data/adb/hoppatch
+# change to working directory
+cd $MODPATH
 
 # dump boot image
 if [ -c "$BOOTIMAGE" ]; then
-  nanddump -f boot.img "$BOOTIMAGE"
+    nanddump -f boot.img "$BOOTIMAGE"
 else
-  dd if="$BOOTIMAGE" of=boot.img
+    dd if="$BOOTIMAGE" of=boot.img
 fi
 
 # unpack boot image
@@ -90,7 +82,7 @@ sleep 1
 # patch with patcher
 ui_print "- Patching boot image..."
 mkdir dalvik-cache
-ANDROID_DATA=$PWD dalvikvm -cp $MODPATH/kernel_patcher.zip kernel_patcher
+ANDROID_DATA=$PWD dalvikvm -cp kernel_patcher.zip kernel_patcher
 [ $? -ne 0 ] && abort "! Kernel patcher failed"
 sleep 1
 
@@ -101,46 +93,43 @@ magiskboot repack boot.img
 [ $? -ne 0 ] && abort "! Failed to repack boot image"
 sleep 1
 
-# change to module directory
-cd $MODPATH
-
 # offload.o was added since Android 11
 if [ $API -ge 30 ]; then
-  # patching offload.o and appending bind commands to post-fs-data.sh
-  ui_print "- Patching offload.o..."
-  cp post-fs-data.sh.template post-fs-data.sh
-  offloadpath=/system/etc/bpf/
-  mkdir -p $MODPATH$offloadpath
-  find $offloadpath -maxdepth 1 -type f -iname "offload*.o" | while read offloadfile; do
-    ui_print "- Found BPF module: $offloadfile"
-    cp $offloadfile $MODPATH$offloadpath
-    ANDROID_DATA=$PWD dalvikvm -cp bpf_patcher.zip bpf_patcher $MODPATH$offloadfile $API
-    [ $? -ne 0 ] && abort "! BPF patcher failed"
-    echo "mount -o ro,bind \$MODDIR$offloadfile.patched $offloadfile" >> post-fs-data.sh
-    touch flag
-    sleep 1
-  done
-  find /apex/com.android.tethering*/etc/bpf/ -maxdepth 0 -type d | while read offloadpath; do
+    # patching offload.o and appending bind commands to post-fs-data.sh
+    ui_print "- Patching offload.o..."
+    cp post-fs-data.sh.template post-fs-data.sh
+    offloadpath=/system/etc/bpf/
     mkdir -p $MODPATH$offloadpath
     find $offloadpath -maxdepth 1 -type f -iname "offload*.o" | while read offloadfile; do
-      ui_print "- Found BPF module: $offloadfile"
-      cp $offloadfile $MODPATH$offloadpath
-      ANDROID_DATA=$PWD dalvikvm -cp bpf_patcher.zip bpf_patcher $MODPATH$offloadfile $API
-      [ $? -ne 0 ] && abort "! BPF patcher failed"
-      echo "mount -o ro,bind \$MODDIR$offloadfile.patched $offloadfile" >> post-fs-data.sh
-      touch flag
-      sleep 1
+        ui_print "- Found BPF module: $offloadfile"
+        cp $offloadfile $MODPATH$offloadpath
+        ANDROID_DATA=$PWD dalvikvm -cp bpf_patcher.zip bpf_patcher $MODPATH$offloadfile $API
+        [ $? -ne 0 ] && abort "! BPF patcher failed"
+        echo "mount -o ro,bind \$MODDIR$offloadfile.patched $offloadfile" >> post-fs-data.sh
+        touch flag
+        sleep 1
     done
-  done
-  [ ! -f flag ] && abort "! Unable to locate BPF module"
+    find /apex/com.android.tethering*/etc/bpf/ -maxdepth 0 -type d | while read offloadpath; do
+        mkdir -p $MODPATH$offloadpath
+        find $offloadpath -maxdepth 1 -type f -iname "offload*.o" | while read offloadfile; do
+            ui_print "- Found BPF module: $offloadfile"
+            cp $offloadfile $MODPATH$offloadpath
+            ANDROID_DATA=$PWD dalvikvm -cp bpf_patcher.zip bpf_patcher $MODPATH$offloadfile $API
+            [ $? -ne 0 ] && abort "! BPF patcher failed"
+            echo "mount -o ro,bind \$MODDIR$offloadfile.patched $offloadfile" >> post-fs-data.sh
+            touch flag
+            sleep 1
+        done
+    done
+    [ ! -f flag ] && abort "! Unable to locate BPF module"
 fi
 
 # disabling 'Tethering hardware acceleration'
 if [ ! $(settings get global tether_offload_disabled) == "1" ]; then
-  ui_print "- Disabling 'Tethering hardware acceleration'..."
-  settings put global tether_offload_disabled 1
+    ui_print "- Disabling 'Tethering hardware acceleration'..."
+    settings put global tether_offload_disabled 1
 else
-  ui_print "- 'Tethering hardware acceleration' already disabled"
+    ui_print "- 'Tethering hardware acceleration' already disabled"
 fi
 
 # adding dun to APN Type
@@ -151,30 +140,25 @@ if [ $? -eq 0 ]; then
   apntype=$(echo $apninfo | cut -F2 -d"type=")
   echo $apntype | grep "dun" >/dev/null
   if [ $? -ne 0 ]; then
-    ui_print "- Inserting 'dun' into APN Type"
-    if [ "${apntype: -1}" == "," ]; then
-      content update --uri content://telephony/carriers --where "_id=$apnid" --bind type:s:"$apntype"dun
-    else
-      content update --uri content://telephony/carriers --where "_id=$apnid" --bind type:s:"$apntype",dun
-    fi
-    # revert edited=4 that prevents APN from being edited from GUI
-    apninfo=$(content query --uri content://telephony/carriers/preferapn --projection edited)
-    echo $apninfo | grep "edited" >/dev/null
-    if [ $? -eq 0 ]; then
-      content update --uri content://telephony/carriers --where "_id=$apnid" --bind edited:s:1
-    fi
+      ui_print "- Inserting 'dun' into APN Type"
+      if [ "${apntype: -1}" == "," ]; then
+          content update --uri content://telephony/carriers --where "_id=$apnid" --bind type:s:"$apntype"dun
+      else
+          content update --uri content://telephony/carriers --where "_id=$apnid" --bind type:s:"$apntype",dun
+      fi
+      # revert edited=4 that prevents APN from being edited from GUI
+      apninfo=$(content query --uri content://telephony/carriers/preferapn --projection edited)
+      echo $apninfo | grep "edited" >/dev/null
+      if [ $? -eq 0 ]; then
+          content update --uri content://telephony/carriers --where "_id=$apnid" --bind edited:s:1
+      fi
   else
-    ui_print "- APN Type already contains a 'dun' entry"
+      ui_print "- APN Type already contains a 'dun' entry"
   fi
 else
-  if [ -f /sdcard/skip_apn ]; then
-    ui_print "! WARNING Failed to dump APN information"
-  else
-    abort "! Failed to dump APN information"
-  fi
+   ui_print "! WARNING Failed to dump APN information"
 fi
 # flash new-boot.img
 ui_print "- Flashing modified boot image..."
-flash_image /data/adb/hoppatch/new-boot.img "$BOOTIMAGE"
+flash_image new-boot.img "$BOOTIMAGE"
 [ $? -ne 0 ] && abort "! Failed to flash modified boot image"
-mv /data/adb/hoppatch/boot.img /data/adb/hoppatch/original-boot.img
