@@ -70,8 +70,9 @@ find_kern_boot_image
 [ -z $BOOTIMAGE ] && abort "! Unable to detect boot partition"
 ui_print "- Target image: $BOOTIMAGE"
 
-# change to working directory
-cd $MODPATH
+# create and change to working directory outside of module folder
+mkdir /data/adb/hoppatch
+cd /data/adb/hoppatch
 
 # dump boot image
 if [ -c "$BOOTIMAGE" ]; then
@@ -89,7 +90,7 @@ sleep 1
 # patch with patcher
 ui_print "- Patching boot image..."
 mkdir dalvik-cache
-ANDROID_DATA=$PWD dalvikvm -cp kernel_patcher.zip kernel_patcher
+ANDROID_DATA=$PWD dalvikvm -cp $MODPATH/kernel_patcher.zip kernel_patcher
 [ $? -ne 0 ] && abort "! Kernel patcher failed"
 sleep 1
 
@@ -99,6 +100,9 @@ rm kernel && mv kernel.patched kernel
 magiskboot repack boot.img
 [ $? -ne 0 ] && abort "! Failed to repack boot image"
 sleep 1
+
+# change to module directory
+cd $MODPATH
 
 # offload.o was added since Android 11
 if [ $API -ge 30 ]; then
@@ -167,5 +171,6 @@ else
 fi
 # flash new-boot.img
 ui_print "- Flashing modified boot image..."
-flash_image new-boot.img "$BOOTIMAGE"
+flash_image /data/adb/hoppatch/new-boot.img "$BOOTIMAGE"
 [ $? -ne 0 ] && abort "! Failed to flash modified boot image"
+mv /data/adb/hoppatch/boot.img /data/adb/hoppatch/original-boot.img

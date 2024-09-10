@@ -104,7 +104,9 @@ flash_image() {
 # use util_functions to find the boot partition
 find_kern_boot_image
 
-if [ ! -z $BOOTIMAGE ] && [ -f $MODDIR/boot.img ]; then
+if [ ! -z $BOOTIMAGE ] && [ -f /data/adb/hoppatch/original-boot.img ]; then
     # Flash original boot image
-    flash_image $MODDIR/boot.img "$BOOTIMAGE"
+    flash_image /data/adb/hoppatch/original-boot.img "$BOOTIMAGE"
 fi
+
+rm -R /data/adb/hoppatch
