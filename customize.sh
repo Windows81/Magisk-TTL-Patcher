@@ -42,7 +42,7 @@ fi
 
 # unpack boot image
 ui_print "- Unpacking boot image with magiskboot"
-chmod +x magiskboot
+chmod +x /data/adb/magisk/magiskboot
 /data/adb/magisk/magiskboot unpack boot.img
 [ $? -ne 0 ] && abort "! Failed to unpack boot image"
 sleep 1
@@ -77,6 +77,17 @@ if [ $API -ge 30 ]; then
             touch flag
             sleep 1
         done
+    done
+    offloadpath=/system/etc/bpf/
+    mkdir -p $MODPATH$offloadpath
+    find $offloadpath -maxdepth 1 -type f -iname "offload*.o" | while read offloadfile; do
+        ui_print "- Found BPF module: $offloadfile"
+        cp $offloadfile $MODPATH$offloadpath
+        ANDROID_DATA=$PWD dalvikvm -cp bpf_patcher.zip bpf_patcher $MODPATH$offloadfile $API
+        [ $? -ne 0 ] && abort "! BPF patcher failed"
+        echo "mount -o ro,bind \$MODDIR$offloadfile.patched $offloadfile" >> post-fs-data.sh
+        touch flag
+        sleep 1
     done
     [ ! -f flag ] && abort "! Unable to locate BPF module"
 fi
