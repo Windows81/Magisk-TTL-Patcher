@@ -80,6 +80,7 @@ if [ $API -ge 30 ]; then
     # patching offload.o and appending bind commands to post-fs-data.sh
     ui_print "- Patching offload.o..."
     cp post-fs-data.sh.template post-fs-data.sh
+    echo "for pid in \$(pidof init); do" >> post-fs-data.sh
     find /apex/com.android.tethering*/etc/bpf/ -maxdepth 0 -type d | while read offloadpath; do
         mkdir -p $MODPATH$offloadpath
         find $offloadpath -maxdepth 1 -type f -iname "offload*.o" | while read offloadfile; do
@@ -87,11 +88,13 @@ if [ $API -ge 30 ]; then
             cp $offloadfile $MODPATH$offloadpath
             ANDROID_DATA=$PWD dalvikvm -cp bpf_patcher.zip bpf_patcher $MODPATH$offloadfile $API
             [ $? -ne 0 ] && abort "! BPF patcher failed"
-            echo "mount -o ro,bind \$MODDIR$offloadfile.patched $offloadfile" >> post-fs-data.sh
+            #echo "mount -o ro,bind \$MODDIR$offloadfile.patched $offloadfile" >> post-fs-data.sh
+            echo "  nsenter --mount=/proc/\${pid}/ns/mnt -- /bin/mount --bind \$MODDIR$offloadfile.patched $offloadfile;" >> post-fs-data.sh
             touch flag
             sleep 1
         done
     done
+    echo "done" >> post-fs-data.sh
     [ ! -f flag ] && abort "! Unable to locate BPF module"
 fi
 
